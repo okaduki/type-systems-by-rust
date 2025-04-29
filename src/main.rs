@@ -1,7 +1,9 @@
 mod parser;
+mod type_system;
 
 use parser::parse;
 use std::io::{self, Read};
+use type_system::typecheck;
 
 fn main() {
     let mut buffer = String::new();
@@ -9,5 +11,12 @@ fn main() {
     buffer = buffer.trim().to_string();
 
     println!("{:?}", buffer);
-    println!("{:?}", parse(&buffer));
+
+    let term = parse(&buffer);
+    println!("term: {:?}", &term);
+
+    if let Ok(term) = term {
+        let ty = typecheck(&term);
+        println!("type: {:?}", &ty);
+    }
 }
