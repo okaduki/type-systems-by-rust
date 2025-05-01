@@ -1,10 +1,4 @@
-use crate::parser::Term;
-
-#[derive(Debug, PartialEq)]
-pub enum Type {
-    Boolean,
-    Number,
-}
+use crate::parser::{Term, Type};
 
 pub fn typecheck(t: &Term) -> Result<Type, String> {
     match t {
@@ -33,6 +27,7 @@ pub fn typecheck(t: &Term) -> Result<Type, String> {
 
             Ok(then_type)
         }
+        _ => unimplemented!(),
     }
 }
 
