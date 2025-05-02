@@ -1,6 +1,8 @@
 ## EBNF
 
 ```
+statements = ( statement , ";" )* , statement , ";"?
+statement = term | 'const' , white-spaces , name , "=" , term
 term = expr , "+" , term
     | expr , white-spaces , "?" , term , white-spaces , ":", term
     | expr;
