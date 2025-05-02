@@ -91,6 +91,15 @@ fn typecheck_impl(t: &Term, dict: &mut HashMap<String, Type>) -> Result<Type, St
                 Err(String::from("function type expected"))
             }
         }
+        Term::Seq { body, rest } => {
+            typecheck_impl(&body, dict)?;
+            typecheck_impl(&rest, dict)
+        }
+        Term::Assign { name, init } => {
+            let ty = typecheck_impl(&init, dict)?;
+            dict.insert(name.clone(), ty);
+            Ok(Type::Unit)
+        }
         _ => unimplemented!(),
     }
 }
@@ -227,6 +236,56 @@ mod tests_typecheck {
         }
         {
             let r = typecheck(&parse("((f : number ) => f)( (y: number) => true )").unwrap());
+            assert!(r.is_err(), "actual type: {:?}", r);
+        }
+    }
+
+    #[test]
+    fn type_assign() {
+        assert_eq!(
+            typecheck(&parse("const x = 1; x").unwrap()),
+            Ok(Type::Number)
+        );
+        assert_eq!(
+            typecheck(
+                &parse(
+                    "const f = (x : number, y : number, z: bool ) => z ? x : y;
+                    f(1, 2, false);"
+                )
+                .unwrap()
+            ),
+            Ok(Type::Number)
+        );
+        assert_eq!(
+            typecheck(
+                &parse(
+                    "const g = ((f : (x : number) => bool) => f(1));
+                    const f = (y: number) => true;
+                    g(f)"
+                )
+                .unwrap()
+            ),
+            Ok(Type::Boolean)
+        );
+        {
+            let r = typecheck(
+                &parse(
+                    "const f = (x : number, y : number, z: bool ) => z ? x : y;
+                f(x, y, z)",
+                )
+                .unwrap(),
+            );
+            assert!(r.is_err(), "actual type: {:?}", r);
+        }
+        {
+            let r = typecheck(
+                &parse(
+                    "const f = (x: number) => x + 1;
+                    const y = true;
+                    f(y);",
+                )
+                .unwrap(),
+            );
             assert!(r.is_err(), "actual type: {:?}", r);
         }
     }
