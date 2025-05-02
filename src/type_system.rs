@@ -1,6 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
-
-use nom::Err;
+use std::collections::HashMap;
 
 use crate::parser::{Term, Type};
 
@@ -28,7 +26,7 @@ fn typecheck_impl(t: &Term, dict: &mut HashMap<String, Type>) -> Result<Type, St
             let els_type = typecheck_impl(els, dict)?;
 
             if cond_type != Type::Boolean {
-                return Err(String::from("bool expected"));
+                return Err(String::from("boolean expected"));
             }
             if then_type != els_type {
                 return Err(String::from("then and else have different types"));
@@ -158,7 +156,7 @@ mod tests_typecheck {
         );
 
         assert_eq!(
-            typecheck(&parse("(x: number, y: bool) => 1").unwrap()),
+            typecheck(&parse("(x: number, y: boolean) => 1").unwrap()),
             Ok(Type::Func {
                 params: vec![
                     (String::from("x"), Type::Number),
@@ -169,7 +167,7 @@ mod tests_typecheck {
         );
 
         assert_eq!(
-            typecheck(&parse("(x: number, y: bool) => y ? x : x + 1").unwrap()),
+            typecheck(&parse("(x: number, y: boolean) => y ? x : x + 1").unwrap()),
             Ok(Type::Func {
                 params: vec![
                     (String::from("x"), Type::Number),
@@ -193,7 +191,7 @@ mod tests_typecheck {
             })
         );
         assert_eq!(
-            typecheck(&parse("(x: bool) => ((x : number) => x + 1)").unwrap()),
+            typecheck(&parse("(x: boolean) => ((x : number) => x + 1)").unwrap()),
             Ok(Type::Func {
                 params: vec![(String::from("x"), Type::Boolean)],
                 ret: Box::new(Type::Func {
@@ -202,10 +200,10 @@ mod tests_typecheck {
                 })
             })
         );
-        assert!(typecheck(&parse("(x: number) => ((x : bool) => x + 1)").unwrap()).is_err());
+        assert!(typecheck(&parse("(x: number) => ((x : boolean) => x + 1)").unwrap()).is_err());
 
-        assert!(typecheck(&parse("(x: number, y: bool) => x + y").unwrap()).is_err());
-        assert!(typecheck(&parse("(x: number, y: bool) => z").unwrap()).is_err());
+        assert!(typecheck(&parse("(x: number, y: boolean) => x + y").unwrap()).is_err());
+        assert!(typecheck(&parse("(x: number, y: boolean) => z").unwrap()).is_err());
         assert!(typecheck(&parse("(f: (x: number) => number) => x").unwrap()).is_err());
     }
 
@@ -214,19 +212,20 @@ mod tests_typecheck {
         assert_eq!(typecheck(&parse("(() => 1)()").unwrap()), Ok(Type::Number));
         assert_eq!(
             typecheck(
-                &parse("((x : number, y : number, z: bool ) => z ? x : y)(1, 2, false)").unwrap()
+                &parse("((x : number, y : number, z: boolean ) => z ? x : y)(1, 2, false)")
+                    .unwrap()
             ),
             Ok(Type::Number)
         );
         assert_eq!(
             typecheck(
-                &parse("((f : (x : number) => bool) => f(1))( (y: number) => true )").unwrap()
+                &parse("((f : (x : number) => boolean) => f(1))( (y: number) => true )").unwrap()
             ),
             Ok(Type::Boolean)
         );
         {
             let r = typecheck(
-                &parse("((x : number, y : number, z: bool ) => z ? x : y)(x, y, z)").unwrap(),
+                &parse("((x : number, y : number, z: boolean ) => z ? x : y)(x, y, z)").unwrap(),
             );
             assert!(r.is_err(), "actual type: {:?}", r);
         }
@@ -249,7 +248,7 @@ mod tests_typecheck {
         assert_eq!(
             typecheck(
                 &parse(
-                    "const f = (x : number, y : number, z: bool ) => z ? x : y;
+                    "const f = (x : number, y : number, z: boolean ) => z ? x : y;
                     f(1, 2, false);"
                 )
                 .unwrap()
@@ -259,7 +258,7 @@ mod tests_typecheck {
         assert_eq!(
             typecheck(
                 &parse(
-                    "const g = ((f : (x : number) => bool) => f(1));
+                    "const g = ((f : (x : number) => boolean) => f(1));
                     const f = (y: number) => true;
                     g(f)"
                 )
@@ -270,7 +269,7 @@ mod tests_typecheck {
         {
             let r = typecheck(
                 &parse(
-                    "const f = (x : number, y : number, z: bool ) => z ? x : y;
+                    "const f = (x : number, y : number, z: boolean ) => z ? x : y;
                 f(x, y, z)",
                 )
                 .unwrap(),

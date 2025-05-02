@@ -103,7 +103,7 @@ fn term_var(input: &str) -> IResult<&str, Term> {
 fn parse_type(input: &str) -> IResult<&str, Type> {
     if let Ok((input, name)) = parse_name(input) {
         return match name.as_str() {
-            "bool" => Ok((input, Type::Boolean)),
+            "boolean" => Ok((input, Type::Boolean)),
             "number" => Ok((input, Type::Number)),
             _ => Err(nom::Err::Error(nom::error::Error::new(
                 input,
@@ -369,7 +369,7 @@ mod tests_parse {
     fn test_parse_type() {
         assert_eq!(parse_type.parse("()"), Ok(("", Type::Unit)));
         assert_eq!(parse_type.parse("number"), Ok(("", Type::Number)));
-        assert_eq!(parse_type.parse("bool"), Ok(("", Type::Boolean)));
+        assert_eq!(parse_type.parse("boolean"), Ok(("", Type::Boolean)));
         assert!(parse_type.parse("booll").is_err());
         assert_eq!(
             parse_type.parse("() => ()"),
@@ -382,7 +382,7 @@ mod tests_parse {
             ))
         );
         assert_eq!(
-            parse_type.parse("(x: number, y: bool) => number"),
+            parse_type.parse("(x: number, y: boolean) => number"),
             Ok((
                 "",
                 Type::Func {
@@ -395,7 +395,7 @@ mod tests_parse {
             ))
         );
         assert_eq!(
-            parse_type.parse("(x: number, f: (a: number) => bool ) => bool"),
+            parse_type.parse("(x: number, f: (a: number) => boolean ) => boolean"),
             Ok((
                 "",
                 Type::Func {
@@ -426,7 +426,7 @@ mod tests_parse {
         );
 
         assert_eq!(
-            parse("(x: number, y: number, z: bool) => z ? x + y : 123"),
+            parse("(x: number, y: number, z: boolean) => z ? x + y : 123"),
             Ok(Term::Lambda {
                 var_type: vec![
                     (String::from("x"), Type::Number),
@@ -445,7 +445,7 @@ mod tests_parse {
         );
 
         assert_eq!(
-            parse("(x: number, f: (a: number) => bool) => x"),
+            parse("(x: number, f: (a: number) => boolean) => x"),
             Ok(Term::Lambda {
                 var_type: vec![
                     (String::from("x"), Type::Number),
@@ -496,7 +496,7 @@ mod tests_parse {
         );
 
         assert_eq!(
-            parse("((x : bool, y : number) => y)(true, 123)"),
+            parse("((x : boolean, y : number) => y)(true, 123)"),
             Ok(Term::FunCall {
                 func: Box::new(Term::Lambda {
                     var_type: vec![
