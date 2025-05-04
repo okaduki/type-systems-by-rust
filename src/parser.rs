@@ -174,22 +174,12 @@ fn lambda_expr(input: &str) -> IResult<&str, Term> {
     .parse(input)
 }
 
-fn funcall_expr(input: &str) -> IResult<&str, Term> {
-    complete(
-        alt((
-            term_var,
-            delimited((char('('), multispace0), term, (multispace0, char(')'))),
-        ))
-        .and(delimited(
-            (char('('), multispace0),
-            separated_list0((multispace0, tag(","), multispace0), term),
-            (multispace0, char(')')),
-        ))
-        .map(|(func, args)| Term::FunCall {
-            func: Box::new(func),
-            args: args,
-        }),
-    )
+fn funcall_expr(input: &str) -> IResult<&str, Vec<Term>> {
+    complete(delimited(
+        (char('('), multispace0),
+        separated_list0((multispace0, tag(","), multispace0), term),
+        (multispace0, char(')')),
+    ))
     .parse(input)
 }
 
@@ -200,7 +190,7 @@ fn obj_expr(input: &str) -> IResult<&str, Term> {
             (multispace0, char(','), multispace0),
             separated_pair(parse_name, (multispace0, char(':'), multispace0), term),
         ),
-        (char('}'), multispace0),
+        (multispace0, char('}'), multispace0),
     )
     .parse(input)?;
 
@@ -215,15 +205,7 @@ fn obj_expr(input: &str) -> IResult<&str, Term> {
 fn term_expr(input: &str) -> IResult<&str, Term> {
     let paren_term = delimited(char('('), term, (multispace0, char(')')));
 
-    alt((
-        obj_expr,
-        funcall_expr,
-        lambda_expr,
-        paren_term,
-        term_number,
-        term_var,
-    ))
-    .parse(input)
+    alt((obj_expr, lambda_expr, paren_term, term_number, term_var)).parse(input)
 }
 
 fn term(input: &str) -> IResult<&str, Term> {
@@ -244,6 +226,16 @@ fn term(input: &str) -> IResult<&str, Term> {
                 input,
                 Term::If(Box::new(expr), Box::new(expr2), Box::new(expr3)),
             )
+        } else if let Ok((input, args)) = many1(funcall_expr).parse(input) {
+            let mut crt = expr;
+            for arg in args {
+                crt = Term::FunCall {
+                    func: Box::new(crt),
+                    args: arg,
+                };
+            }
+
+            (input, crt)
         } else {
             (input, expr)
         }
@@ -657,6 +649,29 @@ mod tests_parse {
                             Box::new(Term::Add(Box::new(var("b")), Box::new(var("c"))))
                         )),
                     }),
+                }),
+            })
+        );
+
+        assert_eq!(
+            parse("const f = (x : number) => ((y : number) => x + y); f(2)(3);"),
+            Ok(Term::Seq {
+                body: Box::new(Term::Assign {
+                    name: String::from("f"),
+                    init: Box::new(Term::Lambda {
+                        var_type: vec![(String::from("x"), Type::Number)],
+                        func: Box::new(Term::Lambda {
+                            var_type: vec![(String::from("y"), Type::Number)],
+                            func: Box::new(Term::Add(Box::new(var("x")), Box::new(var("y")),)),
+                        })
+                    }),
+                }),
+                rest: Box::new(Term::FunCall {
+                    func: Box::new(Term::FunCall {
+                        func: Box::new(var("f")),
+                        args: vec![Term::Number(2)],
+                    }),
+                    args: vec![Term::Number(3)],
                 }),
             })
         );

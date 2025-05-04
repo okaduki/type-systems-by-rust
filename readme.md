@@ -13,15 +13,16 @@ statements = ( statement , ";" )* , statement , ";"?
 statement = term | 'const' , white-spaces , name , "=" , term
 term = (expr , "+" , term
     | expr , "?" , term , ":", term
+    | expr , funcall-expr+
     | expr) , ( "." , name )*;
 expr = ( "(" , term , ")"
-    | "{" , name , ":" , expr , ( "," , name , ":" , term)* "}"
-    | funcall_expr
+    | "{" , name , ":" , term , ( "," , name , ":" , term)* "}"
     | lambda-expr
     | bool
     | number
     | var );
-funcall_expr = ( "(" , term , ")" | var ) , "(" , [ term , ( "," , term ) * ] , ")"
+
+funcall-expr = "(" , [ term , ( "," , term ) * ] , ")"
 lambda-expr = "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , term
 type = atomic-type
     | "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
