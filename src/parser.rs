@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -20,6 +22,9 @@ pub enum Type {
     Func {
         params: Vec<(String, Type)>,
         ret: Box<Type>,
+    },
+    Object {
+        map: HashMap<String, Type>,
     },
 }
 
@@ -49,7 +54,7 @@ impl PartialEq for Type {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Term {
     True,
     False,
@@ -72,6 +77,13 @@ pub enum Term {
     Assign {
         name: String,
         init: Box<Term>,
+    },
+    Object {
+        map: HashMap<String, Term>,
+    },
+    ObjectRead {
+        var: Box<Term>,
+        prop: String,
     },
 }
 
@@ -181,12 +193,37 @@ fn funcall_expr(input: &str) -> IResult<&str, Term> {
     .parse(input)
 }
 
+fn obj_expr(input: &str) -> IResult<&str, Term> {
+    let (input, t) = delimited(
+        (char('{'), multispace0),
+        separated_list0(
+            (multispace0, char(','), multispace0),
+            separated_pair(parse_name, (multispace0, char(':'), multispace0), term),
+        ),
+        (char('}'), multispace0),
+    )
+    .parse(input)?;
+
+    let mut map = HashMap::new();
+    for (k, v) in t {
+        map.insert(k, v);
+    }
+
+    Ok((input, Term::Object { map: map }))
+}
+
 fn term_expr(input: &str) -> IResult<&str, Term> {
     let paren_term = delimited(char('('), term, (multispace0, char(')')));
-    // let r = funcall_expr.parse(input);
-    // println!("{:?}", r);
 
-    alt((funcall_expr, lambda_expr, paren_term, term_number, term_var)).parse(input)
+    alt((
+        obj_expr,
+        funcall_expr,
+        lambda_expr,
+        paren_term,
+        term_number,
+        term_var,
+    ))
+    .parse(input)
 }
 
 fn term(input: &str) -> IResult<&str, Term> {
@@ -199,18 +236,33 @@ fn term(input: &str) -> IResult<&str, Term> {
         separated_pair(term, (multispace0, char(':')), term),
     );
 
-    if let Ok((input, expr2)) = term_add.parse(input) {
-        return Ok((input, Term::Add(Box::new(expr), Box::new(expr2))));
-    }
+    let (input, t) = {
+        if let Ok((input, expr2)) = term_add.parse(input) {
+            (input, Term::Add(Box::new(expr), Box::new(expr2)))
+        } else if let Ok((input, (expr2, expr3))) = term_cond.parse(input) {
+            (
+                input,
+                Term::If(Box::new(expr), Box::new(expr2), Box::new(expr3)),
+            )
+        } else {
+            (input, expr)
+        }
+    };
 
-    if let Ok((input, (expr2, expr3))) = term_cond.parse(input) {
-        return Ok((
-            input,
-            Term::If(Box::new(expr), Box::new(expr2), Box::new(expr3)),
-        ));
-    }
+    if let Ok((input, _)) = tag::<&str, &str, error::Error<&str>>(".").parse(input) {
+        let (input, props) = separated_list1(tag("."), parse_name).parse(input)?;
 
-    Ok((input, expr))
+        let mut crt = t;
+        for prop in props {
+            crt = Term::ObjectRead {
+                var: Box::new(crt),
+                prop: prop,
+            };
+        }
+        Ok((input, crt))
+    } else {
+        Ok((input, t))
+    }
 }
 
 fn statement(input: &str) -> IResult<&str, Term> {
@@ -605,6 +657,47 @@ mod tests_parse {
                             Box::new(Term::Add(Box::new(var("b")), Box::new(var("c"))))
                         )),
                     }),
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn test_object() {
+        let obj = Term::Object {
+            map: HashMap::from([
+                (String::from("foo"), Term::Number(1)),
+                (String::from("bar"), Term::True),
+                (
+                    String::from("inner"),
+                    Term::Object {
+                        map: HashMap::from([
+                            (String::from("bazz"), Term::True),
+                            (String::from("hoge"), Term::False),
+                        ]),
+                    },
+                ),
+            ]),
+        };
+
+        assert_eq!(
+            parse("{ foo: 1, bar: true, inner: {bazz: true, hoge: false}}"),
+            Ok(obj.clone())
+        );
+
+        assert_eq!(
+            parse("const a = { foo: 1, bar: true, inner: {bazz: true, hoge: false}}; a.inner.hoge"),
+            Ok(Term::Seq {
+                body: Box::new(Term::Assign {
+                    name: String::from("a"),
+                    init: Box::new(obj),
+                }),
+                rest: Box::new(Term::ObjectRead {
+                    var: Box::new(Term::ObjectRead {
+                        var: Box::new(Term::Var(String::from("a"))),
+                        prop: String::from("inner")
+                    }),
+                    prop: String::from("hoge")
                 }),
             })
         );

@@ -1,26 +1,35 @@
+## Description
+
+[型システムのしくみ ― TypeScriptで実装しながら学ぶ型とプログラミング言語](https://www.lambdanote.com/products/type-systems) をRust で実装したもの
+
+## Note
+
+- TypeScript を正確にパースするのはあきらめ、本文中で使われる程度の簡単な範囲でパースするように制限
+
 ## EBNF
 
 ```
 statements = ( statement , ";" )* , statement , ";"?
 statement = term | 'const' , white-spaces , name , "=" , term
-term = expr , "+" , term
-    | expr , white-spaces , "?" , term , white-spaces , ":", term
-    | expr;
-expr = white-spaces , ( "(" , term , white-spaces , ")"
+term = (expr , "+" , term
+    | expr , "?" , term , ":", term
+    | expr) , ( "." , name )*;
+expr = ( "(" , term , ")"
+    | "{" , name , ":" , expr , ( "," , name , ":" , term)* "}"
     | funcall_expr
     | lambda-expr
     | bool
     | number
     | var );
 funcall_expr = ( "(" , term , ")" | var ) , "(" , [ term , ( "," , term ) * ] , ")"
-lambda-expr = "(" , [ var , ":" , type , ( "," , var , ":" , type)* ] , ")" , '=>' , term
+lambda-expr = "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , term
 type = atomic-type
-    | "(" , [ var , ":" , type , ( "," , var , ":" , type)* ] , ")" , '=>' , type
+    | "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
 atomic-type = 'bool' | 'number'
 var = name
 
 name = alpha [ alphanumeric ]*
-white-spaces = ? space0 ?;
+white-spaces = ? space1 ?;
 bool = 'true' | 'false';
 number = ? i64 ?;
 ```
