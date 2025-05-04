@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use nom::Err;
+
 use crate::parser::{Term, Type};
 
 pub fn typecheck(t: &Term) -> Result<Type, String> {
@@ -97,6 +99,25 @@ fn typecheck_impl(t: &Term, dict: &mut HashMap<String, Type>) -> Result<Type, St
             let ty = typecheck_impl(&init, dict)?;
             dict.insert(name.clone(), ty);
             Ok(Type::Unit)
+        }
+        Term::Object { map } => {
+            let mut props_type = HashMap::new();
+            for (name, prop) in map {
+                props_type.insert(name.clone(), typecheck_impl(prop, dict)?);
+            }
+            Ok(Type::Object { map: props_type })
+        }
+        Term::ObjectRead { var, prop } => {
+            let ty = typecheck_impl(var, dict)?;
+            if let Type::Object { map } = ty {
+                if let Some(t) = map.get(prop) {
+                    Ok(t.clone())
+                } else {
+                    Err(format!("key {} is not found", prop))
+                }
+            } else {
+                Err(String::from("object type expected"))
+            }
         }
         _ => unimplemented!(),
     }
@@ -283,6 +304,46 @@ mod tests_typecheck {
                     const y = true;
                     f(y);",
                 )
+                .unwrap(),
+            );
+            assert!(r.is_err(), "actual type: {:?}", r);
+        }
+    }
+
+    #[test]
+    fn type_object() {
+        /*
+        assert_eq!(
+            typecheck(&parse("{ foo: 1, bar: true, inner: {bazz: true, hoge: false}}").unwrap()),
+            Ok(Type::Object {
+                map: HashMap::from([
+                    (String::from("foo"), Type::Number),
+                    (String::from("bar"), Type::Boolean),
+                    (
+                        String::from("inner"),
+                        Type::Object {
+                            map: HashMap::from([
+                                (String::from("bazz"), Type::Boolean),
+                                (String::from("hoge"), Type::Boolean),
+                            ])
+                        }
+                    ),
+                ])
+            })
+        );
+         */
+
+        assert_eq!(
+            typecheck(
+                &parse("const a = { foo: 1, bar: true, inner: {bazz: true, hoge: false}}; a.inner.hoge;")
+                .unwrap()
+            ),
+            Ok(Type::Boolean)
+        );
+
+        {
+            let r = typecheck(
+                &parse("const a = { foo: 1, bar: true, inner: {bazz: true, hoge: false}}; a.not.found;")
                 .unwrap(),
             );
             assert!(r.is_err(), "actual type: {:?}", r);
