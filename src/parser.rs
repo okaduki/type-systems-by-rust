@@ -64,6 +64,12 @@ pub enum Term {
         var_type: Vec<(String, Type)>,
         func: Box<Term>,
     },
+    RecFunc {
+        name: String,
+        var_type: Vec<(String, Type)>,
+        func: Box<Term>,
+        ret_type: Type,
+    },
     FunCall {
         func: Box<Term>,
         args: Vec<Term>,
@@ -151,25 +157,30 @@ fn parse_type(input: &str) -> IResult<&str, Type> {
     (multispace0, tag("()")).map(|_| Type::Unit).parse(input)
 }
 
+fn params_expr(input: &str) -> IResult<&str, Vec<(String, Type)>> {
+    delimited(
+        (char('('), multispace0),
+        separated_list0(
+            (multispace0, tag(","), multispace0),
+            separated_pair(
+                parse_name,
+                (multispace0, char(':'), multispace0),
+                parse_type,
+            ),
+        ),
+        (multispace0, char(')')),
+    )
+    .parse(input)
+}
+
 fn lambda_expr(input: &str) -> IResult<&str, Term> {
     complete(
-        delimited(
-            (char('('), multispace0),
-            separated_list0(
-                (multispace0, tag(","), multispace0),
-                separated_pair(
-                    parse_name,
-                    (multispace0, char(':'), multispace0),
-                    parse_type,
-                ),
-            ),
-            (multispace0, char(')')),
-        )
-        .and(preceded((multispace0, tag("=>"), multispace0), term))
-        .map(|(params, func)| Term::Lambda {
-            var_type: params,
-            func: Box::new(func),
-        }),
+        params_expr
+            .and(preceded((multispace0, tag("=>"), multispace0), term))
+            .map(|(params, func)| Term::Lambda {
+                var_type: params,
+                func: Box::new(func),
+            }),
     )
     .parse(input)
 }
@@ -270,6 +281,23 @@ fn statement(input: &str) -> IResult<&str, Term> {
                 init: Box::new(init),
             },
         ));
+    } else if let Ok((input, _)) = tag::<&str, &str, error::Error<&str>>("function ").parse(input) {
+        let (input, name) = preceded(multispace0, parse_name).parse(input)?;
+        let (input, params) = params_expr.parse(input)?;
+        let (input, _) = tag(":").parse(input)?;
+        let (input, ret_type) = preceded(multispace0, parse_type).parse(input)?;
+        let (input, func) =
+            delimited((multispace0, tag("{")), term, (multispace0, tag("}"))).parse(input)?;
+
+        return Ok((
+            input,
+            Term::RecFunc {
+                name: name,
+                var_type: params,
+                func: Box::new(func),
+                ret_type: ret_type,
+            },
+        ));
     }
 
     term.parse(input)
@@ -314,6 +342,8 @@ pub fn parse(input: &str) -> Result<Term, String> {
 
 #[cfg(test)]
 mod tests_parse {
+    use std::vec;
+
     use super::*;
 
     fn var(name: &str) -> Term {
@@ -713,6 +743,38 @@ mod tests_parse {
                         prop: String::from("inner")
                     }),
                     prop: String::from("hoge")
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn test_recfunc() {
+        assert_eq!(
+            parse("function sum(x : number): number { true ? 0 : x + sum(x + -1) }; sum(5); "),
+            Ok(Term::Seq {
+                body: Box::new(Term::RecFunc {
+                    name: String::from("sum"),
+                    var_type: vec![(String::from("x"), Type::Number)],
+                    func: Box::new(Term::If(
+                        Box::new(Term::True),
+                        Box::new(Term::Number(0)),
+                        Box::new(Term::Add(
+                            Box::new(var("x")),
+                            Box::new(Term::FunCall {
+                                func: Box::new(var("sum")),
+                                args: vec![Term::Add(
+                                    Box::new(var("x")),
+                                    Box::new(Term::Number(-1))
+                                )]
+                            })
+                        ))
+                    )),
+                    ret_type: Type::Number,
+                }),
+                rest: Box::new(Term::FunCall {
+                    func: Box::new(var("sum")),
+                    args: vec![Term::Number(5)],
                 }),
             })
         );

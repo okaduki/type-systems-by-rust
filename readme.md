@@ -10,7 +10,9 @@
 
 ```
 statements = ( statement , ";" )* , statement , ";"?
-statement = term | 'const' , white-spaces , name , "=" , term
+statement = term
+    | 'const' , white-spaces , name , "=" , term
+    | 'function' , white-spaces , name , params-expr , ":" , type , "{" term "}"
 term = (expr , "+" , term
     | expr , "?" , term , ":", term
     | expr , funcall-expr+
@@ -23,7 +25,8 @@ expr = ( "(" , term , ")"
     | var );
 
 funcall-expr = "(" , [ term , ( "," , term ) * ] , ")"
-lambda-expr = "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , term
+lambda-expr = params-expr , '=>' , term
+params-expr =  "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")"
 type = atomic-type
     | "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
 atomic-type = 'bool' | 'number'
