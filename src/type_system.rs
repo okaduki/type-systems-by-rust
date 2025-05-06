@@ -37,23 +37,11 @@ fn typecheck_impl(t: &Term, dict: &mut HashMap<String, Type>) -> Result<Type, St
             Ok(then_type)
         }
         Term::Lambda { var_type, func } => {
-            let mut old_vals = HashMap::new();
+            let mut new_dict = dict.clone();
             for (var, typ) in var_type {
-                if let Some(oldval) = dict.insert(var.clone(), typ.clone()) {
-                    old_vals.insert(var, Some(oldval));
-                } else {
-                    old_vals.insert(var, None);
-                }
+                new_dict.insert(var.clone(), typ.clone());
             }
-            let r = typecheck_impl(func, dict)?;
-
-            for (k, v) in old_vals {
-                if let Some(val) = v {
-                    *dict.get_mut(k).unwrap() = val;
-                } else {
-                    dict.remove(k);
-                }
-            }
+            let r = typecheck_impl(func, &mut new_dict)?;
             Ok(Type::Func {
                 params: var_type.to_vec(),
                 ret: Box::new(r),
@@ -117,6 +105,29 @@ fn typecheck_impl(t: &Term, dict: &mut HashMap<String, Type>) -> Result<Type, St
                 }
             } else {
                 Err(String::from("object type expected"))
+            }
+        }
+        Term::RecFunc {
+            name,
+            var_type,
+            func,
+            ret_type,
+        } => {
+            let functype = Type::Func {
+                params: var_type.to_vec(),
+                ret: Box::new(ret_type.clone()),
+            };
+            dict.insert(name.clone(), functype);
+
+            let mut new_dict = dict.clone();
+            for (var, typ) in var_type {
+                new_dict.insert(var.clone(), typ.clone());
+            }
+            let typ = typecheck_impl(func, &mut new_dict)?;
+            if typ != *ret_type {
+                Err(String::from("object type expected"))
+            } else {
+                Ok(Type::Unit)
             }
         }
         _ => unimplemented!(),
@@ -348,5 +359,16 @@ mod tests_typecheck {
             );
             assert!(r.is_err(), "actual type: {:?}", r);
         }
+    }
+
+    #[test]
+    fn type_recfunc() {
+        assert_eq!(
+            typecheck(
+                &parse("function sum(x : number): number { true ? 0 : x + sum(x + -1) }; sum(5); ")
+                    .unwrap()
+            ),
+            Ok(Type::Number)
+        );
     }
 }
