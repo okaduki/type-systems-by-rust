@@ -3,7 +3,7 @@ mod type_system;
 
 use parser::parse;
 use std::io::{self, Read};
-use type_system::typecheck;
+use type_system::*;
 
 fn main() {
     let mut buffer = String::new();
@@ -16,7 +16,7 @@ fn main() {
     println!("term: {:?}", &term);
 
     if let Ok(term) = term {
-        let ty = typecheck(&term);
+        let ty = typecheck_with_subtype(&term);
         println!("type: {:?}", &ty);
     }
 }
