@@ -49,6 +49,7 @@ impl PartialEq for Type {
                 }
                 l_params.iter().zip(r_params).all(|((_, l), (_, r))| l == r)
             }
+            (Type::Object { map: mapl }, Type::Object { map: mapr }) => mapl == mapr,
             _ => false,
         }
     }
@@ -150,6 +151,26 @@ fn parse_type(input: &str) -> IResult<&str, Type> {
             Type::Func {
                 params: params,
                 ret: Box::new(ret),
+            },
+        ));
+    } else if let Ok((input, entries)) = delimited(
+        (char('{'), multispace0),
+        separated_list0(
+            (multispace0, tag(","), multispace0),
+            separated_pair(
+                parse_name,
+                (multispace0, char(':'), multispace0),
+                parse_type,
+            ),
+        ),
+        (multispace0, char('}')),
+    )
+    .parse(input)
+    {
+        return Ok((
+            input,
+            Type::Object {
+                map: entries.into_iter().collect(),
             },
         ));
     }
@@ -304,6 +325,8 @@ fn statement(input: &str) -> IResult<&str, Term> {
 }
 
 fn statements(input: &str) -> IResult<&str, Term> {
+    let (input, _) = multispace0.parse(input)?;
+
     let (mut input, mut terms) = many0(terminated(
         complete(statement),
         (multispace0, tag(";"), multispace0),
@@ -743,6 +766,25 @@ mod tests_parse {
                         prop: String::from("inner")
                     }),
                     prop: String::from("hoge")
+                }),
+            })
+        );
+
+        assert_eq!(
+            parse("(x : { foo: number, bar: boolean}) => x.foo"),
+            Ok(Term::Lambda {
+                var_type: vec![(
+                    String::from("x"),
+                    Type::Object {
+                        map: HashMap::from([
+                            (String::from("foo"), Type::Number),
+                            (String::from("bar"), Type::Boolean)
+                        ])
+                    }
+                )],
+                func: Box::new(Term::ObjectRead {
+                    var: Box::new(var("x")),
+                    prop: String::from("foo")
                 }),
             })
         );
