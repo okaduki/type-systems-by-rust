@@ -26,6 +26,13 @@ pub enum Type {
     Object {
         map: HashMap<String, Type>,
     },
+    TypeVar {
+        name: String,
+    },
+    Rec {
+        name: String,
+        typ: Box<Type>,
+    },
 }
 
 impl PartialEq for Type {
@@ -50,6 +57,17 @@ impl PartialEq for Type {
                 l_params.iter().zip(r_params).all(|((_, l), (_, r))| l == r)
             }
             (Type::Object { map: mapl }, Type::Object { map: mapr }) => mapl == mapr,
+            (Type::TypeVar { name: lname }, Type::TypeVar { name: rname }) => lname == rname,
+            (
+                Type::Rec {
+                    name: lname,
+                    typ: ltype,
+                },
+                Type::Rec {
+                    name: rname,
+                    typ: rtype,
+                },
+            ) => lname == rname && ltype == rtype,
             _ => false,
         }
     }
@@ -92,6 +110,10 @@ pub enum Term {
         var: Box<Term>,
         prop: String,
     },
+    TypeDecl {
+        name: String,
+        typ: Type,
+    },
 }
 
 fn term_number(input: &str) -> IResult<&str, Term> {
@@ -124,10 +146,12 @@ fn parse_type(input: &str) -> IResult<&str, Type> {
         return match name.as_str() {
             "boolean" => Ok((input, Type::Boolean)),
             "number" => Ok((input, Type::Number)),
-            _ => Err(nom::Err::Error(nom::error::Error::new(
+            n => Ok((
                 input,
-                nom::error::ErrorKind::AlphaNumeric,
-            ))),
+                Type::TypeVar {
+                    name: String::from(n),
+                },
+            )),
         };
     }
 
@@ -302,6 +326,18 @@ fn statement(input: &str) -> IResult<&str, Term> {
                 init: Box::new(init),
             },
         ));
+    } else if let Ok((input, _)) = tag::<&str, &str, error::Error<&str>>("type ").parse(input) {
+        let (input, name) = preceded(multispace0, parse_name).parse(input)?;
+        let (input, _) = (multispace0, tag("="), multispace0).parse(input)?;
+        let (input, typ) = parse_type.parse(input)?;
+
+        return Ok((
+            input,
+            Term::TypeDecl {
+                name: name,
+                typ: typ,
+            },
+        ));
     } else if let Ok((input, _)) = tag::<&str, &str, error::Error<&str>>("function ").parse(input) {
         let (input, name) = preceded(multispace0, parse_name).parse(input)?;
         let (input, params) = params_expr.parse(input)?;
@@ -467,7 +503,15 @@ mod tests_parse {
         assert_eq!(parse_type.parse("()"), Ok(("", Type::Unit)));
         assert_eq!(parse_type.parse("number"), Ok(("", Type::Number)));
         assert_eq!(parse_type.parse("boolean"), Ok(("", Type::Boolean)));
-        assert!(parse_type.parse("booll").is_err());
+        assert_eq!(
+            parse_type.parse("booll"),
+            Ok((
+                "",
+                Type::TypeVar {
+                    name: String::from("booll")
+                }
+            ))
+        );
         assert_eq!(
             parse_type.parse("() => ()"),
             Ok((
@@ -819,6 +863,133 @@ mod tests_parse {
                     args: vec![Term::Number(5)],
                 }),
             })
+        );
+    }
+
+    #[test]
+    fn test_rectype() {
+        assert_eq!(
+            parse("type X = { foo: X }; (arg : X) => 1;"),
+            Ok(Term::Seq {
+                body: Box::new(Term::TypeDecl {
+                    name: String::from("X"),
+                    typ: Type::Object {
+                        map: HashMap::from([(
+                            String::from("foo"),
+                            Type::TypeVar {
+                                name: String::from("X")
+                            }
+                        )])
+                    }
+                }),
+                rest: Box::new(Term::Lambda {
+                    var_type: vec![(
+                        String::from("arg"),
+                        Type::TypeVar {
+                            name: String::from("X")
+                        }
+                    )],
+                    func: Box::new(Term::Number(1)),
+                }),
+            })
+        );
+
+        let expected_terms = vec![
+            Term::TypeDecl {
+                name: String::from("NumStream"),
+                typ: Type::Object {
+                    map: HashMap::from([
+                        (String::from("num"), Type::Number),
+                        (
+                            String::from("rest"),
+                            Type::Func {
+                                params: vec![],
+                                ret: Box::new(Type::TypeVar {
+                                    name: String::from("NumStream"),
+                                }),
+                            },
+                        ),
+                    ]),
+                },
+            },
+            Term::RecFunc {
+                name: String::from("numbers"),
+                var_type: vec![(String::from("n"), Type::Number)],
+                ret_type: Type::TypeVar {
+                    name: String::from("NumStream"),
+                },
+                func: Box::new(Term::Object {
+                    map: HashMap::from([
+                        (String::from("num"), var("n")),
+                        (
+                            String::from("rest"),
+                            Term::Lambda {
+                                var_type: vec![],
+                                func: Box::new(Term::FunCall {
+                                    args: vec![Term::Add(
+                                        Box::new(var("n")),
+                                        Box::new(Term::Number(1)),
+                                    )],
+                                    func: Box::new(var("numbers")),
+                                }),
+                            },
+                        ),
+                    ]),
+                }),
+            },
+            Term::Assign {
+                name: String::from("nx1"),
+                init: Box::new(Term::FunCall {
+                    func: Box::new(var("numbers")),
+                    args: vec![Term::Number(1)],
+                }),
+            },
+            Term::Assign {
+                name: String::from("nx2"),
+                init: Box::new(Term::FunCall {
+                    func: Box::new(Term::ObjectRead {
+                        var: Box::new(var("nx1")),
+                        prop: String::from("rest"),
+                    }),
+                    args: vec![],
+                }),
+            },
+            Term::Assign {
+                name: String::from("nx3"),
+                init: Box::new(Term::FunCall {
+                    func: Box::new(Term::ObjectRead {
+                        var: Box::new(var("nx2")),
+                        prop: String::from("rest"),
+                    }),
+                    args: vec![],
+                }),
+            },
+            var("nx3"),
+        ];
+        let terms = expected_terms
+            .into_iter()
+            .rev()
+            .reduce(|rest, body| Term::Seq {
+                body: Box::new(body),
+                rest: Box::new(rest),
+            })
+            .unwrap();
+
+        assert_eq!(
+            parse(
+                "
+                type NumStream = { num: number, rest: () => NumStream };
+                function numbers(n: number): NumStream {
+                    { num: n, rest: () => numbers(n+1) }
+                };
+                
+                const nx1 = numbers(1);
+                const nx2 = (nx1.rest)();
+                const nx3 = (nx2.rest)();
+                nx3;
+                "
+            ),
+            Ok(terms),
         );
     }
 }

@@ -4,7 +4,7 @@
 
 ## Note
 
-- TypeScript を正確にパースするのはあきらめ、本文中で使われる程度の簡単な範囲でパースするように制限
+- 本文中で使われる疑似TypeScript で、例をカバーできる簡単な範囲でパースするように制限
 
 ## EBNF
 
@@ -12,6 +12,7 @@
 statements = ( statement , ";" )* , statement , ";"?
 statement = term
     | 'const' , white-spaces , name , "=" , term
+    | 'type' , white-spaces , name , "=" , type;
     | 'function' , white-spaces , name , params-expr , ":" , type , "{" term "}"
 term = (expr , "+" , term
     | expr , "?" , term , ":", term
@@ -28,6 +29,7 @@ funcall-expr = "(" , [ term , ( "," , term ) * ] , ")"
 lambda-expr = params-expr , '=>' , term
 params-expr =  "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")"
 type = atomic-type
+    | name
     | "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
     | "{" , [ name , ":" , type , ( "," , name , ":" , type)* ] , "}";
 atomic-type = 'bool' | 'number'
