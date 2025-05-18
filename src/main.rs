@@ -16,7 +16,7 @@ fn main() {
     println!("term: {:?}", &term);
 
     if let Ok(term) = term {
-        let ty = typecheck_with_subtype(&term);
+        let ty = typecheck_with_rectype(&term);
         println!("type: {:?}", &ty);
     }
 }
