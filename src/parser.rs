@@ -1,3 +1,4 @@
+use core::fmt;
 use std::collections::HashMap;
 
 use nom::{
@@ -14,7 +15,7 @@ use nom::{
     sequence::{delimited, preceded, separated_pair, terminated},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Type {
     Boolean,
     Number,
@@ -73,7 +74,42 @@ impl PartialEq for Type {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+impl fmt::Debug for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Number => write!(f, "Number"),
+            Type::Boolean => write!(f, "Boolean"),
+            Type::Unit => write!(f, "()"),
+            Type::TypeVar { name } => write!(f, "{}", name),
+            Type::Func { params, ret } => {
+                write!(f, "(")?;
+                for p in params {
+                    write!(f, "{}: ", p.0)?;
+                    p.1.fmt(f)?;
+                    write!(f, ", ")?;
+                }
+                write!(f, ") => ")?;
+                ret.fmt(f)
+            }
+            Type::Object { map } => {
+                write!(f, "{{")?;
+                for (k, v) in map {
+                    write!(f, "{}: ", k)?;
+                    v.fmt(f)?;
+                    write!(f, ", ")?;
+                }
+                write!(f, "}}")
+            }
+            Type::Rec { name, typ } => {
+                write!(f, "(\\mu {}. ", name)?;
+                typ.fmt(f)?;
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub enum Term {
     True,
     False,
@@ -114,6 +150,78 @@ pub enum Term {
         name: String,
         typ: Type,
     },
+}
+
+impl fmt::Debug for Term {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Term::True => write!(f, "true"),
+            Term::False => write!(f, "false"),
+            Term::Number(n) => write!(f, "{}", n),
+            Term::Var(name) => write!(f, "{}", name),
+            Term::Lambda { var_type, func } => {
+                write!(f, "lambda(")?;
+
+                let mut sep = "";
+                for (k, v) in var_type {
+                    write!(f, "{}{}: {:?}", sep, k, v)?;
+                    sep = ",";
+                }
+                write!(f, ") => {:?}", func)
+            }
+            Term::RecFunc {
+                name,
+                var_type,
+                func,
+                ret_type,
+            } => {
+                write!(f, "function {}(", name)?;
+                let mut sep = "";
+                for (k, v) in var_type {
+                    write!(f, "{}{}: {:?}", sep, k, v)?;
+                    sep = ",";
+                }
+                write!(f, "): {:?} {{ {:?} }}", ret_type, func)
+            }
+            Term::FunCall { func, args } => {
+                write!(f, "{:?}(", func)?;
+
+                let mut sep = "";
+                for t in args {
+                    write!(f, "{}{:?}", sep, t)?;
+                    sep = ",";
+                }
+                write!(f, ")")
+            }
+            Term::Add(lhs, rhs) => {
+                write!(f, "{:?} + {:?}", lhs, rhs)
+            }
+            Term::If(cond, then_t, else_t) => {
+                write!(f, "{:?} ? {:?} : {:?}", cond, then_t, else_t)
+            }
+            Term::Seq { body, rest } => {
+                write!(f, "{:?};\n{:?}", body, rest)
+            }
+            Term::Assign { name, init } => {
+                write!(f, "const {} = {:?}", name, init)
+            }
+            Term::Object { map } => {
+                write!(f, "{{")?;
+                let mut sep = "";
+                for (k, v) in map {
+                    write!(f, "{}{}: {:?}", sep, k, v)?;
+                    sep = ",";
+                }
+                write!(f, "}}")
+            }
+            Term::ObjectRead { var, prop } => {
+                write!(f, "{:?}.{}", var, prop)
+            }
+            Term::TypeDecl { name, typ } => {
+                write!(f, "type {} = {:?}", name, typ)
+            }
+        }
+    }
 }
 
 fn term_number(input: &str) -> IResult<&str, Term> {
