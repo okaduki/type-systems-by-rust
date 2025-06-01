@@ -14,34 +14,34 @@ pub fn typecheck_with_rectype(t: &Term) -> Result<Type, String> {
     typecheck_with_rectype_impl(t, &mut dict, &mut tyvar_dict)
 }
 
-fn expand_type(ty: &Type, tyVarName: &str, repTy: &Type) -> Type {
+fn expand_type(ty: &Type, ty_var_name: &str, rep_ty: &Type) -> Type {
     match ty {
         Type::Func { params, ret } => Type::Func {
             params: params
                 .into_iter()
-                .map(|(name, typ)| (name.clone(), expand_type(typ, tyVarName, repTy)))
+                .map(|(name, typ)| (name.clone(), expand_type(typ, ty_var_name, rep_ty)))
                 .collect(),
-            ret: Box::new(expand_type(&ret, tyVarName, repTy)),
+            ret: Box::new(expand_type(&ret, ty_var_name, rep_ty)),
         },
         Type::Object { map } => Type::Object {
             map: map
                 .into_iter()
-                .map(|(name, prop)| (name.clone(), expand_type(prop, tyVarName, repTy)))
+                .map(|(name, prop)| (name.clone(), expand_type(prop, ty_var_name, rep_ty)))
                 .collect(),
         },
         Type::Rec { name, typ } => {
-            if name == tyVarName {
+            if name == ty_var_name {
                 return ty.clone();
             }
-            let new_type = expand_type(typ, tyVarName, repTy);
+            let new_type = expand_type(typ, ty_var_name, rep_ty);
             Type::Rec {
                 name: name.clone(),
                 typ: Box::new(new_type),
             }
         }
         Type::TypeVar { name } => {
-            if name == tyVarName {
-                repTy.clone()
+            if name == ty_var_name {
+                rep_ty.clone()
             } else {
                 ty.clone()
             }
