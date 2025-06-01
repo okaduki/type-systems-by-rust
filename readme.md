@@ -16,16 +16,17 @@ statement = term
     | 'function' , white-spaces , name , params-expr , ":" , type , "{" term "}"
 term = (expr , "+" , term
     | expr , "?" , term , ":", term
-    | expr , funcall-expr+
+    | expr , generics-expr ? , funcall-expr *
     | expr) , ( "." , name )*;
 expr = ( "(" , term , ")"
     | "{" , name , ":" , term , ( "," , name , ":" , term)* "}"
-    | lambda-expr
+    | generics-expr ? , lambda-expr
     | bool
     | number
     | var );
 
 funcall-expr = "(" , [ term , ( "," , term ) * ] , ")"
+generics-expr = "<" , name , ( "," , name )* , ">"
 lambda-expr = params-expr , '=>' , term
 params-expr =  "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")"
 type = atomic-type

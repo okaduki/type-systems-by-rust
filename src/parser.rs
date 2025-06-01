@@ -9,9 +9,9 @@ use nom::{
         char,
         complete::{alpha1, alphanumeric0, i64, multispace0},
     },
-    combinator::{all_consuming, complete},
+    combinator::{all_consuming, complete, fail},
     error,
-    multi::*,
+    multi::{self, *},
     sequence::{delimited, preceded, separated_pair, terminated},
 };
 
@@ -26,6 +26,14 @@ pub enum Type {
     },
     Object {
         map: HashMap<String, Type>,
+    },
+    TypeAbs {
+        name: Vec<String>,
+        typ: Box<Type>,
+    },
+    TypeApp {
+        type_args: Vec<Type>,
+        type_abs: Box<Type>,
     },
     TypeVar {
         name: String,
@@ -81,6 +89,27 @@ impl fmt::Debug for Type {
             Type::Boolean => write!(f, "Boolean"),
             Type::Unit => write!(f, "()"),
             Type::TypeVar { name } => write!(f, "{}", name),
+            Type::TypeAbs { name, typ } => {
+                write!(f, "<")?;
+                for t in name {
+                    write!(f, "{}", t)?;
+                    write!(f, ", ")?;
+                }
+                write!(f, ">")?;
+                typ.fmt(f)
+            }
+            Type::TypeApp {
+                type_args,
+                type_abs,
+            } => {
+                write!(f, "tyapp<")?;
+                for t in type_args {
+                    write!(f, "{:?}", t)?;
+                    write!(f, ", ")?;
+                }
+                write!(f, ">")?;
+                type_abs.fmt(f)
+            }
             Type::Func { params, ret } => {
                 write!(f, "(")?;
                 for p in params {
@@ -115,6 +144,15 @@ pub enum Term {
     False,
     Number(i64),
     Var(String),
+    Generics {
+        type_abs: Vec<String>,
+        var_type: Vec<(String, Type)>,
+        func: Box<Term>,
+    },
+    TypeApp {
+        type_abs: Box<Term>,
+        type_args: Vec<Type>,
+    },
     Lambda {
         var_type: Vec<(String, Type)>,
         func: Box<Term>,
@@ -159,6 +197,41 @@ impl fmt::Debug for Term {
             Term::False => write!(f, "false"),
             Term::Number(n) => write!(f, "{}", n),
             Term::Var(name) => write!(f, "{}", name),
+            Term::Generics {
+                type_abs,
+                var_type,
+                func,
+            } => {
+                write!(f, "<")?;
+                let mut sep = "";
+                for k in type_abs {
+                    write!(f, "{}{}", sep, k)?;
+                    sep = ",";
+                }
+
+                write!(f, ">(")?;
+
+                let mut sep = "";
+                for (k, v) in var_type {
+                    write!(f, "{}{}: {:?}", sep, k, v)?;
+                    sep = ",";
+                }
+                write!(f, ") => {:?}", func)
+            }
+            Term::TypeApp {
+                type_abs,
+                type_args,
+            } => {
+                write!(f, "tyapp<")?;
+                let mut sep = "";
+                for k in type_args {
+                    write!(f, "{}{:?}", sep, k)?;
+                    sep = ",";
+                }
+
+                write!(f, ">")?;
+                write!(f, "{:?}", type_abs)
+            }
             Term::Lambda { var_type, func } => {
                 write!(f, "lambda(")?;
 
@@ -326,16 +399,39 @@ fn params_expr(input: &str) -> IResult<&str, Vec<(String, Type)>> {
     .parse(input)
 }
 
-fn lambda_expr(input: &str) -> IResult<&str, Term> {
-    complete(
-        params_expr
-            .and(preceded((multispace0, tag("=>"), multispace0), term))
-            .map(|(params, func)| Term::Lambda {
-                var_type: params,
-                func: Box::new(func),
-            }),
+fn generics_expr(input: &str) -> IResult<&str, Vec<String>> {
+    delimited(
+        (char('<'), multispace0),
+        separated_list1((multispace0, tag(","), multispace0), parse_name),
+        (multispace0, char('>')),
     )
     .parse(input)
+}
+
+fn lambda_expr(input: &str) -> IResult<&str, Term> {
+    let generics_res = generics_expr.parse(input);
+    if let Ok((input, type_abs)) = generics_res {
+        complete(
+            params_expr
+                .and(preceded((multispace0, tag("=>"), multispace0), term))
+                .map(|(params, func)| Term::Generics {
+                    type_abs: type_abs.clone(),
+                    var_type: params,
+                    func: Box::new(func),
+                }),
+        )
+        .parse(input)
+    } else {
+        complete(
+            params_expr
+                .and(preceded((multispace0, tag("=>"), multispace0), term))
+                .map(|(params, func)| Term::Lambda {
+                    var_type: params,
+                    func: Box::new(func),
+                }),
+        )
+        .parse(input)
+    }
 }
 
 fn funcall_expr(input: &str) -> IResult<&str, Vec<Term>> {
@@ -390,6 +486,34 @@ fn term(input: &str) -> IResult<&str, Term> {
                 input,
                 Term::If(Box::new(expr), Box::new(expr2), Box::new(expr3)),
             )
+        } else if let Ok((input, gene_args)) = generics_expr.parse(input) {
+            dbg!(&input, &gene_args);
+
+            let (input, args) = many0(funcall_expr).parse(input)?;
+
+            let mut type_args = Vec::new();
+            for arg in &gene_args {
+                if let Ok((_, ty)) = parse_type(arg) {
+                    type_args.push(ty);
+                } else {
+                    unreachable!();
+                }
+            }
+
+            let mut crt = expr;
+            for arg in args {
+                crt = Term::FunCall {
+                    func: Box::new(crt),
+                    args: arg,
+                };
+            }
+
+            let ret = Term::TypeApp {
+                type_abs: Box::new(crt),
+                type_args: type_args,
+            };
+
+            (input, ret)
         } else if let Ok((input, args)) = many1(funcall_expr).parse(input) {
             let mut crt = expr;
             for arg in args {
@@ -1098,6 +1222,47 @@ mod tests_parse {
                 "
             ),
             Ok(terms),
+        );
+    }
+
+    #[test]
+    fn test_generic() {
+        assert_eq!(
+            parse(
+                "const select = <T>(cond: boolean, a: T, b: T) => (cond ? a : b); select<number>;"
+            ),
+            Ok(Term::Seq {
+                body: Box::new(Term::Assign {
+                    name: String::from("select"),
+                    init: Box::new(Term::Generics {
+                        type_abs: vec![String::from("T")],
+                        var_type: vec![
+                            (String::from("cond"), Type::Boolean),
+                            (
+                                String::from("a"),
+                                Type::TypeVar {
+                                    name: String::from("T")
+                                }
+                            ),
+                            (
+                                String::from("b"),
+                                Type::TypeVar {
+                                    name: String::from("T")
+                                }
+                            ),
+                        ],
+                        func: Box::new(Term::If(
+                            Box::new(var("cond")),
+                            Box::new(var("a")),
+                            Box::new(var("b"))
+                        )),
+                    }),
+                }),
+                rest: Box::new(Term::TypeApp {
+                    type_abs: Box::new(Term::Var(String::from("select"))),
+                    type_args: vec![Type::Number]
+                }),
+            })
         );
     }
 }
