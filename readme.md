@@ -1,3 +1,5 @@
+[![Rust](https://github.com/okaduki/type-systems-by-rust/actions/workflows/rust.yml/badge.svg)](https://github.com/okaduki/type-systems-by-rust/actions/workflows/rust.yml)
+
 ## Description
 
 [型システムのしくみ ― TypeScriptで実装しながら学ぶ型とプログラミング言語](https://www.lambdanote.com/products/type-systems) をRust で実装したもの
