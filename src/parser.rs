@@ -2,7 +2,7 @@ use core::fmt;
 use std::collections::HashMap;
 
 use nom::{
-    IResult, Parser,
+    Err, IResult, Parser,
     branch::alt,
     bytes::complete::tag,
     character::{
@@ -30,10 +30,6 @@ pub enum Type {
     TypeAbs {
         name: Vec<String>,
         typ: Box<Type>,
-    },
-    TypeApp {
-        type_args: Vec<Type>,
-        type_abs: Box<Type>,
     },
     TypeVar {
         name: String,
@@ -77,6 +73,16 @@ impl PartialEq for Type {
                     typ: rtype,
                 },
             ) => lname == rname && ltype == rtype,
+            (
+                Type::TypeAbs {
+                    name: lname,
+                    typ: ltyp,
+                },
+                Type::TypeAbs {
+                    name: rname,
+                    typ: rtyp,
+                },
+            ) => lname == rname && ltyp == rtyp,
             _ => false,
         }
     }
@@ -97,18 +103,6 @@ impl fmt::Debug for Type {
                 }
                 write!(f, ">")?;
                 typ.fmt(f)
-            }
-            Type::TypeApp {
-                type_args,
-                type_abs,
-            } => {
-                write!(f, "tyapp<")?;
-                for t in type_args {
-                    write!(f, "{:?}", t)?;
-                    write!(f, ", ")?;
-                }
-                write!(f, ">")?;
-                type_abs.fmt(f)
             }
             Type::Func { params, ret } => {
                 write!(f, "(")?;
@@ -336,6 +330,36 @@ fn parse_type(input: &str) -> IResult<&str, Type> {
         };
     }
 
+    if let Ok((input, generics)) = generics_expr(input) {
+        let (input, (params, ret)) = delimited(
+            (char('('), multispace0),
+            separated_list0(
+                (multispace0, tag(","), multispace0),
+                separated_pair(
+                    parse_name,
+                    (multispace0, char(':'), multispace0),
+                    parse_type,
+                ),
+            ),
+            (multispace0, char(')')),
+        )
+        .and(preceded((multispace0, tag("=>"), multispace0), parse_type))
+        .parse(input)?;
+
+        let typ = Type::Func {
+            params: params,
+            ret: Box::new(ret),
+        };
+
+        return Ok((
+            input,
+            Type::TypeAbs {
+                name: generics,
+                typ: Box::new(typ),
+            },
+        ));
+    }
+
     if let Ok((input, (params, ret))) = delimited(
         (char('('), multispace0),
         separated_list0(
@@ -487,8 +511,6 @@ fn term(input: &str) -> IResult<&str, Term> {
                 Term::If(Box::new(expr), Box::new(expr2), Box::new(expr3)),
             )
         } else if let Ok((input, gene_args)) = generics_expr.parse(input) {
-            dbg!(&input, &gene_args);
-
             let (input, args) = many0(funcall_expr).parse(input)?;
 
             let mut type_args = Vec::new();
@@ -500,7 +522,10 @@ fn term(input: &str) -> IResult<&str, Term> {
                 }
             }
 
-            let mut crt = expr;
+            let mut crt = Term::TypeApp {
+                type_abs: Box::new(expr),
+                type_args: type_args,
+            };
             for arg in args {
                 crt = Term::FunCall {
                     func: Box::new(crt),
@@ -508,12 +533,7 @@ fn term(input: &str) -> IResult<&str, Term> {
                 };
             }
 
-            let ret = Term::TypeApp {
-                type_abs: Box::new(crt),
-                type_args: type_args,
-            };
-
-            (input, ret)
+            (input, crt)
         } else if let Ok((input, args)) = many1(funcall_expr).parse(input) {
             let mut crt = expr;
             for arg in args {
@@ -1262,6 +1282,37 @@ mod tests_parse {
                     type_abs: Box::new(Term::Var(String::from("select"))),
                     type_args: vec![Type::Number]
                 }),
+            })
+        );
+
+        assert_eq!(
+            parse("<T>(arg1: T, arg2: <T>(x: T) => boolean) => true"),
+            Ok(Term::Generics {
+                type_abs: vec![String::from("T")],
+                var_type: vec![
+                    (
+                        String::from("arg1"),
+                        Type::TypeVar {
+                            name: String::from("T")
+                        }
+                    ),
+                    (
+                        String::from("arg2"),
+                        Type::TypeAbs {
+                            name: vec![String::from("T")],
+                            typ: Box::new(Type::Func {
+                                params: vec![(
+                                    String::from("x"),
+                                    Type::TypeVar {
+                                        name: String::from("T")
+                                    }
+                                )],
+                                ret: Box::new(Type::Boolean)
+                            }),
+                        }
+                    ),
+                ],
+                func: Box::new(Term::True),
             })
         );
     }

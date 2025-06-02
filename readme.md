@@ -31,7 +31,7 @@ lambda-expr = params-expr , '=>' , term
 params-expr =  "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")"
 type = atomic-type
     | name
-    | "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
+    | generics-expr ? , "(" , [ name , ":" , type , ( "," , name , ":" , type)* ] , ")" , '=>' , type
     | "{" , [ name , ":" , type , ( "," , name , ":" , type)* ] , "}";
 atomic-type = 'bool' | 'number'
 var = name
